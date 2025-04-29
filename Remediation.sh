@@ -1876,3 +1876,248 @@ printf "╭───────────────────────
 printf " • ${GREEN}Configuring shadow password suite parameters ${RESET}...\n"
 printf "╰─..★.─────────────────────────────────────────────────────╯\n"
 sleep 5
+read -rp "Enter the maximum number of days a password may be used (recommended: 365): " max_days
+if [[ "$max_days" =~ ^[0-9]+$ ]] && (( max_days >= 1 && max_days <= 365 )); then
+    if grep -qPi '^\h*PASS_MAX_DAYS\b' /etc/login.defs; then
+        sed -ri "s/^\h*PASS_MAX_DAYS\b.*/PASS_MAX_DAYS $max_days/" /etc/login.defs
+        printf " • Updated PASS_MAX_DAYS to %s in /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$max_days"
+    else
+        echo "PASS_MAX_DAYS $max_days" >> /etc/login.defs
+        printf " • Added PASS_MAX_DAYS %s to /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$max_days"
+    fi
+    awk -F: -v md="$max_days" '($2~/^\$.+\$/) {
+        if($5 > 365 || $5 < 1)
+            system("chage --maxdays " md " " $1)
+    }' /etc/shadow
+    printf " • Updated PASS_MAX_DAYS to %s for users with incorrect settings...[${GREEN}DONE${RESET}]\n" "$max_days"
+else
+    printf " •${RED} Invalid input. Please enter a number between 1 and 365.${RESET}\n"
+fi
+read -rp "Enter the minimum number of days between password changes (recommended: 1): " min_days
+if [[ "$min_days" =~ ^[0-9]+$ ]] && (( min_days >= 1 )); then
+    if grep -qPi '^\h*PASS_MIN_DAYS\b' /etc/login.defs; then
+        sed -ri "s/^\h*PASS_MIN_DAYS\b.*/PASS_MIN_DAYS $min_days/" /etc/login.defs
+        printf " • Updated PASS_MIN_DAYS to %s in /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$min_days"
+    else
+        echo "PASS_MIN_DAYS $min_days" >> /etc/login.defs
+        printf " • Added PASS_MIN_DAYS %s to /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$min_days"
+    fi
+    awk -F: -v md="$min_days" '($2~/^\$.+\$/) {
+        if($4 < 1)
+            system("chage --mindays " md " " $1)
+    }' /etc/shadow
+    printf " • Updated PASS_MIN_DAYS to %s for users with incorrect settings...[${GREEN}DONE${RESET}]\n" "$min_days"
+else
+    printf " •${RED} Invalid input. Please enter a number greater than or equal to 1.${RESET}\n"
+fi
+read -rp "Enter the number of warning days before password expiration (recommended: 7 or more): " warn_days
+if [[ "$warn_days" =~ ^[0-9]+$ ]] && (( warn_days >= 7 )); then
+    if grep -qPi '^\h*PASS_WARN_AGE\b' /etc/login.defs; then
+        sed -ri "s/^\h*PASS_WARN_AGE\b.*/PASS_WARN_AGE $warn_days/" /etc/login.defs
+        printf " • Updated PASS_WARN_AGE to %s in /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$warn_days"
+    else
+        echo "PASS_WARN_AGE $warn_days" >> /etc/login.defs
+        printf " • Added PASS_WARN_AGE %s to /etc/login.defs...[${GREEN}DONE${RESET}]\n" "$warn_days"
+    fi
+    awk -F: -v wd="$warn_days" '($2~/^\$.+\$/) {
+        if($6 < 7)
+            system("chage --warndays " wd " " $1)
+    }' /etc/shadow
+    printf " • Updated PASS_WARN_AGE to %s for users with incorrect settings...[${GREEN}DONE${RESET}]\n" "$warn_days"
+else
+    printf " •${RED} Invalid input. Please enter a number 7 or greater.${RESET}\n"
+fi
+if grep -qPi '^\h*ENCRYPT_METHOD\b' /etc/login.defs 2>/dev/null; then
+    sed -ri 's/^\h*ENCRYPT_METHOD\b.*/ENCRYPT_METHOD YESCRYPT/' /etc/login.defs
+    printf " • Updated ENCRYPT_METHOD to YESCRYPT in /etc/login.defs...[${GREEN}DONE${RESET}]\n"
+else
+    echo "ENCRYPT_METHOD YESCRYPT" >> /etc/login.defs
+    printf " • Added ENCRYPT_METHOD YESCRYPT to /etc/login.defs...[${GREEN}DONE${RESET}]\n"
+fi
+read -rp "Enter the number of inactive days before locking accounts (recommended: between 0 to 45): " inactive_days
+if [[ "$inactive_days" =~ ^[0-9]+$ ]] && (( inactive_days <= 45 && inactive_days >= 0 )); then
+    useradd -D -f "$inactive_days"
+    printf " • Set default INACTIVE to %s days...[${GREEN}DONE${RESET}]\n" "$inactive_days"
+    awk -F: -v id="$inactive_days" '($2~/^\$.+\$/) {
+        if($7 > 45 || $7 < 0)
+            system("chage --inactive " id " " $1)
+    }' /etc/shadow
+    printf " • Updated INACTIVE for users with incorrect settings...[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${RED} Invalid input. Please enter a number between 0 and 45.${RESET}\n"
+fi
+while IFS= read -r l_user; do
+    l_change=$(date -d "$(chage --list "$l_user" | grep '^Last password change' | cut -d: -f2- | sed 's/^[[:space:]]*//')" +%s 2>/dev/null)
+    if [[ -n "$l_change" && "$l_change" -gt "$(date +%s)" ]]; then
+        printf " • User: \"%-20s\" last password change in the future...[${RED}FAIL${RESET}]\n" "$l_user"
+    else
+        printf " • User: \"%-20s\" last password change is OK...[${GREEN}PASS${RESET}]\n" "$l_user"
+    fi
+done < <(awk -F: '$2~/^\$.+\$/{print $1}' /etc/shadow)
+echo -e "➽ ${GREEN}Configuring shadow password suite parameters completed${RESET}"
+sleep 5
+printf "${BLUE}[+] User Accounts and Environment ${RESET}\n"
+printf "╭────────────────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring root and system accounts and environment ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────────────────╯\n"
+sleep 5
+for user in $(awk -F: '($3 == 0) { print $1 }' /etc/passwd | grep -v '^root$'); do
+    sudo usermod -u 1001 "$user"
+    printf " •${YELLOW} Changed UID of user '$user' to 1001 (please adjust UID as needed)...${RESET}[${GREEN}DONE${RESET}]\n"
+done
+sudo usermod -g 0 root
+sudo groupmod -g 0 root
+for user in $(awk -F: '($1 !~ /^(root|sync|shutdown|halt|operator)$/ && $4 == 0) { print $1 }' /etc/passwd); do
+    sudo usermod -g 1001 "$user"
+    printf " •${YELLOW} Changed GID of user '$user' to 1001 (please adjust GID as needed)...${RESET}[${GREEN}DONE${RESET}]\n"
+done
+sudo groupmod -g 0 root
+for group in $(awk -F: '($1 != "root" && $3 == 0) { print $1 }' /etc/group); do
+    sudo groupmod -g 1001 "$group"
+    printf " •${YELLOW} Changed GID of group '$group' to 1001 (please adjust GID as needed)...${RESET}[${GREEN}DONE${RESET}]\n"
+done
+status=$(passwd -S root | awk '{print $2}')
+if [[ "$status" != "P" && "$status" != "L" ]]; then
+    sudo usermod -L root
+    printf " •${YELLOW} Locked the root account to control root access...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW} Root account already secured (password set or account locked)...${RESET}[${GREEN}DONE${RESET}]\n"
+fi
+l_root_path="$(sudo -Hiu root env | grep '^PATH' | cut -d= -f2)"
+unset a_path_loc && IFS=":" read -ra a_path_loc <<< "$l_root_path"
+for l_path in "${a_path_loc[@]}"; do
+    if [ -d "$l_path" ]; then
+        if [ "$(stat -Lc '%U' "$l_path")" != "root" ]; then
+            sudo chown root:root "$l_path"
+            printf " •${YELLOW} Corrected ownership of \"$l_path\" to root...${RESET}[${GREEN}DONE${RESET}]\n"
+        fi
+        if [ "$(stat -Lc '%a' "$l_path")" -gt 755 ]; then
+            sudo chmod 755 "$l_path"
+            printf " •${YELLOW} Corrected permissions of \"$l_path\" to 755...${RESET}[${GREEN}DONE${RESET}]\n"
+        fi
+    fi
+done
+printf " •${YELLOW} Please manually fix root's PATH if it contains (::), trailing (:), or (.) entries.${RESET}\n"
+if grep -q "^umask" /root/.bash_profile 2>/dev/null; then
+    sudo sed -i 's/^umask.*/umask 027/' /root/.bash_profile
+else
+    echo "umask 027" | sudo tee -a /root/.bash_profile >/dev/null
+fi
+if grep -q "^umask" /root/.bashrc 2>/dev/null; then
+    sudo sed -i 's/^umask.*/umask 027/' /root/.bashrc
+else
+    echo "umask 027" | sudo tee -a /root/.bashrc >/dev/null
+fi
+printf " •${YELLOW} Set root user's umask to 027 in .bash_profile and .bashrc...${RESET}[${GREEN}DONE${RESET}]\n"
+nologin_shell="$(command -v nologin)"
+valid_shells="^($(awk -F/ '$NF != "nologin" && $NF != "false" {print}' /etc/shells | paste -sd '|' -))$"
+awk -v pat="$valid_shells" -v nologin_shell="$nologin_shell" -F: '
+($1 !~ /^(root|halt|sync|shutdown|nfsnobody)$/ &&
+ ($3 < '"$(awk '/^\s*UID_MIN/{print $2}' /etc/login.defs)"' || $3 == 65534) &&
+ $NF ~ pat) {
+     printf " • Changing shell for user \"%s\" to \"%s\"\n", $1, nologin_shell;
+     system("usermod -s " nologin_shell " " $1)
+}' /etc/passwd
+printf " •${YELLOW} Set system accounts to use nologin shell where appropriate...${RESET}[${GREEN}DONE${RESET}]\n"
+valid_shells="^($(awk -F/ '$NF != "nologin" && $NF != "false" {print}' /etc/shells | paste -sd '|' -))$"
+while IFS= read -r user; do
+    if [[ $(passwd -S "$user" 2>/dev/null | awk '{print $2}') != "L" ]]; then
+        usermod -L "$user" 2>/dev/null
+        printf " •${YELLOW} Locked account without a valid login shell: %s ${RESET}[${GREEN}DONE${RESET}]\n" "$user"
+    fi
+done < <(awk -v pat="$valid_shells" -F: '
+($1 != "root" && $(NF) !~ pat) { print $1 }' /etc/passwd)
+echo -e "➽ ${GREEN}Configuring root and system accounts and environment completed${RESET}"
+sleep 5
+printf "${BLUE}[+] User Accounts and Environment ${RESET}\n"
+printf "╭────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring user default environment ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────╯\n"
+sleep 5
+if grep -Ps '^\h*([^#\n\r]+)?/nologin\b' /etc/shells >/dev/null; then
+    sed -i.bak '/\/nologin\b/d' /etc/shells
+    printf " •${YELLOW} Removed entries containing 'nologin' from /etc/shells ${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " • No 'nologin' entries found in /etc/shells...[${GREEN}OK${RESET}]\n"
+fi
+TMOUT_FILE="/etc/profile.d/99-tmout.sh"
+if [[ ! -f "$TMOUT_FILE" ]]; then
+    sudo tee "$TMOUT_FILE" > /dev/null <<EOF
+TMOUT=900
+readonly TMOUT
+export TMOUT
+EOF
+else
+    sudo sed -i '/^\s*TMOUT/d' "$TMOUT_FILE"
+    sudo tee -a "$TMOUT_FILE" > /dev/null <<EOF
+TMOUT=900
+readonly TMOUT
+export TMOUT
+EOF
+fi
+output1=""
+output2=""
+[ -f /etc/bashrc ] && BRC="/etc/bashrc"
+for f in "$BRC" /etc/profile /etc/profile.d/*.sh; do
+    [ -f "$f" ] || continue
+    if grep -Pq '^\s*([^#]+\s+)?TMOUT=(900|[1-8][0-9][0-9]|[1-9][0-9]|[1-9])\b' "$f" && \
+       grep -Pq '^\s*([^#]+;\s*)?readonly\s+TMOUT' "$f" && \
+       grep -Pq '^\s*([^#]+;\s*)?export\s+TMOUT' "$f"; then
+        output1="$f"
+    fi
+done
+if grep -Pq '^\s*([^#]+\s+)?TMOUT=(9[0-9][1-9]|9[1-9][0-9]|0+|[1-9]\d{3,})\b' /etc/profile /etc/profile.d/*.sh "$BRC" 2>/dev/null; then
+    output2=$(grep -Ps '^\s*([^#]+\s+)?TMOUT=(9[0-9][1-9]|9[1-9][0-9]|0+|[1-9]\d{3,})\b' /etc/profile /etc/profile.d/*.sh "$BRC" 2>/dev/null)
+fi
+if [[ -n "$output1" && -z "$output2" ]]; then
+    printf " •${YELLOW} Ensure default user shell timeout is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW} Ensure default user shell timeout is configured...${RESET}[${RED}FAIL${RESET}]\n"
+fi
+UMASK_FILE="/etc/profile.d/50-systemwide-umask.sh"
+sudo sed -i '/^\s*umask\s\+[0-9]\{3\}/d' "$UMASK_FILE" 2>/dev/null || true
+echo "umask 027" | sudo tee "$UMASK_FILE" > /dev/null
+pass=0
+for f in "$UMASK_FILE" /etc/profile /etc/profile.d/*.sh /etc/bashrc; do
+    [[ -f "$f" ]] || continue
+    grep -Pq '^\s*umask\s+0?027\b' "$f" && pass=1
+    grep -Pq '^\s*umask\s+0?[0-9]{3}\b' "$f" && ! grep -Pq '^\s*umask\s+0?027\b' "$f" && pass=2 && break
+done
+if [[ $pass -eq 1 ]]; then
+    printf " •${YELLOW} Ensure default user umask is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW} Ensure default user umask is configured...${RESET}[${RED}FAIL${RESET}]\n"
+fi
+echo -e "➽ ${GREEN}Configuring user default environment completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring Configure systemd-journald service  ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────╯\n"
+sleep 5
+sudo systemctl unmask systemd-journald.service
+sudo systemctl start systemd-journald.service
+status_enabled=$(systemctl is-enabled systemd-journald.service 2>/dev/null)
+status_active=$(systemctl is-active systemd-journald.service 2>/dev/null)
+if [[ "$status_enabled" == "static" && "$status_active" == "active" ]]; then
+    printf " •${YELLOW} Ensure journald service to be enabled and active...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW} Ensure journald service to be enabled and active...${RESET}[${RED}FAIL${RESET}]\n"
+fi
+if [[ -d /var/log/journal ]]; then
+    sudo find /var/log/journal -type f -exec chmod 0640 {} +
+fi
+sudo chmod 0755 /run
+sudo chmod 0755 /var/lib/systemd
+printf " •${YELLOW} Ensure journald log file permissions...${RESET}[${GREEN}DONE${RESET}]\n"
+sudo mkdir -p /etc/systemd/journald.conf.d/
+sudo tee /etc/systemd/journald.conf.d/60-journald.conf > /dev/null <<EOF
+[Journal]
+SystemMaxUse=1G
+SystemKeepFree=500M
+RuntimeMaxUse=200M
+RuntimeKeepFree=50M
+MaxFileSec=1month
+EOF
+sudo systemctl reload-or-restart systemd-journald
+printf " •${YELLOW} Ensure journald log file rotation is configured...${RESET}[${GREEN}DONE${RESET}]\n"
