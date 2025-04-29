@@ -796,9 +796,9 @@ if ! grep -Pq -- "^\s*blacklist\s+$l_mod_name" /etc/modprobe.d/*.conf 2>/dev/nul
     audit_result="fail"
 fi
 if [[ "$audit_result" == "pass" ]]; then
-    echo -e " Ensure sctp kernel module is not available......[${GREEN}PASS${RESET}]\n"
+    echo -e " Ensure sctp kernel module is not available......[${GREEN}PASS${RESET}]"
 else
-    echo -e " Ensure sctp kernel module is not available......[${RED}FAIL${RESET}]\n"
+    echo -e " Ensure sctp kernel module is not available......[${RED}FAIL${RESET}]"
 fi
 l_mod_name="rds"
 audit_result="pass"
@@ -812,9 +812,9 @@ if ! grep -Pq -- "^\s*blacklist\s+$l_mod_name" /etc/modprobe.d/*.conf 2>/dev/nul
     audit_result="fail"
 fi
 if [[ "$audit_result" == "pass" ]]; then
-    echo -e " Ensure rds kernel module is not available......[${GREEN}PASS${RESET}]\n"
+    echo -e " Ensure rds kernel module is not available......[${GREEN}PASS${RESET}]"
 else
-    echo -e " Ensure rds kernel module is not available......[${RED}FAIL${RESET}]\n"
+    echo -e " Ensure rds kernel module is not available......[${RED}FAIL${RESET}]"
 fi
 l_mod_name="sctp"
 audit_result="pass"
@@ -828,9 +828,9 @@ if ! grep -Pq -- "^\s*blacklist\s+$l_mod_name" /etc/modprobe.d/*.conf 2>/dev/nul
     audit_result="fail"
 fi
 if [[ "$audit_result" == "pass" ]]; then
-    echo -e " Ensure sctp kernel module is not available......[${GREEN}PASS${RESET}]\n"
+    echo -e " Ensure sctp kernel module is not available......[${GREEN}PASS${RESET}]"
 else
-    echo -e " Ensure sctp kernel module is not available......[${RED}FAIL${RESET}]\n"
+    echo -e " Ensure sctp kernel module is not available......[${RED}FAIL${RESET}]"
 fi
 echo -e "➽ ${GREEN}Auditing network kernel modules completed${RESET}"
 sleep 5
@@ -1244,14 +1244,14 @@ done
 if [ -z "$configured_timeout" ]; then
     default_timeout=$(sudo -V | grep "Authentication timestamp timeout" | awk -F: '{print $2}' | awk '{print $1}' | tr -d ' ')
     if [ "$default_timeout" -le 15 ] 2>/dev/null; then
-        printf " •${YELLOW} Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${GREEN}PASS${RESET}]\n"
+        echo -e " Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${GREEN}PASS${RESET}]\n"
     else
-        printf " •${YELLOW} Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${RED}FAIL${RESET}]\n"
+        echo -e " Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${RED}FAIL${RESET}]\n"
     fi
 elif [ "$configured_timeout" -le 15 ] 2>/dev/null && [ "$configured_timeout" -ge 0 ] 2>/dev/null; then
-    printf " •${YELLOW} Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${GREEN}PASS${RESET}]\n"
+    echo -e " Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${GREEN}PASS${RESET}]\n"
 else
-    printf " •${YELLOW} Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${RED}FAIL${RESET}]\n"
+    echo -e " Ensure sudo authentication timeout is ≤ 15 minutes...${RESET}[${RED}FAIL${RESET}]\n"
 fi
 SU_GROUP="sugroup"
 if grep -Piq "^\s*auth\s+(required|requisite)\s+pam_wheel\.so\s+.*use_uid.*group=$SU_GROUP" /etc/pam.d/su; then
@@ -1460,3 +1460,227 @@ printf "╭───────────────────────
 printf " • ${GREEN}Auditing shadow password suite parameters ${RESET}...\n"
 printf "╰─..★.─────────────────────────────────────────────────────╯\n"
 sleep 5
+pass_max_days_login_defs=$(grep -Pi -- '^\h*PASS_MAX_DAYS\h+\d+\b' /etc/login.defs)
+
+if echo "$pass_max_days_login_defs" | grep -Pq '\b([1-9][0-9]{0,2}|1000)\b'; then
+    echo -e " Ensure password expiration is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure password expiration is configured...[${RED}FAIL${RESET}]"
+fi
+awk -F: '($2~/^\$.+\$/) {
+    if($5 > 365 || $5 < 1)
+        printf " User: %s has PASS_MAX_DAYS set to %s...[FAIL]\n", $1, $5
+}' /etc/shadow
+pass_min_days_login_defs=$(grep -Pi -- '^\h*PASS_MIN_DAYS\h+\d+\b' /etc/login.defs)
+
+if echo "$pass_min_days_login_defs" | grep -Pq '\b([1-9][0-9]*)\b'; then
+    echo -e " Ensure minimum password days is configured ...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure minimum password days is configured ...[${RED}FAIL${RESET}]"
+fi
+awk -F: '($2~/^\$.+\$/) {
+    if($4 < 1)
+        printf " User: %s has PASS_MIN_DAYS set to %s...[FAIL]\n", $1, $4
+}' /etc/shadow
+pass_warn_age_login_defs=$(grep -Pi -- '^\h*PASS_WARN_AGE\h+\d+\b' /etc/login.defs)
+if echo "$pass_warn_age_login_defs" | grep -Pq '\b([7-9]|[1-9][0-9]+)\b'; then
+    echo -e " Ensure password expiration warning days is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure password expiration warning days is configured...[${RED}FAIL${RESET}]"
+fi
+awk -F: '($2~/^\$.+\$/) {
+    if($6 < 7)
+        printf " User: %s has PASS_WARN_AGE set to %s...[FAIL]\n", $1, $6
+}' /etc/shadow
+encrypt_method=$(grep -Pi -- '^\h*ENCRYPT_METHOD\h+(sha512|yescrypt)\b' /etc/login.defs)
+if [[ -n "$encrypt_method" ]]; then
+    echo -e " Ensure strong password hashing algorithm is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure strong password hashing algorithm is configured...[${RED}FAIL${RESET}]"
+fi
+inactive_default=$(useradd -D | grep -Po 'INACTIVE=\K\S+')
+if [[ "$inactive_default" -le 45 && "$inactive_default" -ge 0 ]]; then
+    echo -e " Ensure inactive password lock is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure inactive password lock is configured...[${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing shadow password suite parameters completed${RESET}"
+sleep 5
+printf "╭────────────────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing root and system accounts and environment ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────────────────╯\n"
+sleep 5
+if [ "$(awk -F: '($3 == 0) { print $1 }' /etc/passwd | grep -v '^root$')" ]; then
+    echo -e " Ensure only 'root' has UID 0...[${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure only 'root' has UID 0...[${GREEN}PASS${RESET}]"
+fi
+if [ "$(awk -F: '($1 !~ /^(sync|shutdown|halt|operator)$/ && $4 == 0 && $1 != "root") { print $1 }' /etc/passwd)" ]; then
+    echo -e " Ensure only 'root' has GID 0...[${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure only 'root' has GID 0...[${GREEN}PASS${RESET}]"
+fi
+if [ "$(awk -F: '($1 != "root" && $3 == 0) { print $1 }' /etc/group)" ]; then
+    echo -e " Ensure only 'root' group has GID 0...[${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure only 'root' group has GID 0...[${GREEN}PASS${RESET}]"
+fi
+status=$(passwd -S root | awk '{print $2}')
+if [[ "$status" == "P" || "$status" == "L" ]]; then
+    echo -e " Ensure root account access is controlled...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure root account access is controlled...[${RED}FAIL${RESET}]"
+fi
+l_output2=""
+l_pmask="0022"
+l_maxperm="$(printf '%o' $(( 0777 & ~$l_pmask )))"
+l_root_path="$(sudo -Hiu root env | grep '^PATH' | cut -d= -f2)"
+unset a_path_loc && IFS=":" read -ra a_path_loc <<< "$l_root_path"
+grep -q "::" <<< "$l_root_path" && l_output2="$l_output2\n - root's path contains an empty directory (::)"
+grep -Pq ":\h*$" <<< "$l_root_path" && l_output2="$l_output2\n - root's path contains a trailing (:) "
+grep -Pq '(\h+|:)\.(:|\h*$)' <<< "$l_root_path" && l_output2="$l_output2\n - root's path contains current working directory (.)"
+for l_path in "${a_path_loc[@]}"; do
+    if [ -d "$l_path" ]; then
+        read -r l_fmode l_fown <<< "$(stat -Lc '%#a %U' "$l_path")"
+        [ "$l_fown" != "root" ] && l_output2="$l_output2\n - Directory \"$l_path\" is owned by \"$l_fown\"; should be owned by \"root\""
+        [ $(( l_fmode & l_pmask )) -gt 0 ] && l_output2="$l_output2\n - Directory \"$l_path\" permissions are \"$l_fmode\"; should be \"$l_maxperm\" or more restrictive"
+    else
+        case "$l_path" in
+            /snap/bin|/usr/games|/usr/local/games) ;;
+            *) l_output2="$l_output2\n - \"$l_path\" is not a directory" ;;
+        esac
+    fi
+done
+if [ -z "$l_output2" ]; then
+    echo -e " Ensure root path integrity...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure root path integrity...[${RED}FAIL${RESET}]"
+    echo -e "$l_output2"
+fi
+if grep -Psiq -- '^\h*umask\h+(([0-7][0-7][01][0-7]\b|[0-7][0-7][0-7][0-6]\b)|([0-7][01][0-7]\b|[0-7][0-7][0-6]\b)|(u=[rwx]{1,3},)?(((g=[rx]?[rx]?w[rx]?[rx]?\b)(,o=[rwx]{1,3})?)|((g=[wrx]{1,3},)?o=[wrx]{1,3}\b)))' /root/.bash_profile /root/.bashrc; then
+    echo -e " Ensure root user umask is configured securely...[${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure root user umask is configured securely...[${GREEN}PASS${RESET}]"
+fi
+valid_shells="$(awk -F/ '$NF != "nologin" && $NF != "false" {print}' /etc/shells | paste -sd '|' -)"
+if awk -v pat="^($valid_shells)$" -F: '
+  ($1 !~ /^(root|halt|sync|shutdown|nfsnobody)$/ &&
+  ($3 < '"$(awk '/^\s*UID_MIN/{print $2}' /etc/login.defs)"' || $3 == 65534) &&
+  $NF ~ pat) { exit 1 }' /etc/passwd; then
+    echo -e " Ensure system accounts do not have a valid login shell...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure system accounts do not have a valid login shell...[${RED}FAIL${RESET}]"
+fi
+valid_shells="^($(awk -F/ '$NF != "nologin" && $NF != "false" {print}' /etc/shells | paste -sd '|' -))$"
+locked_status=0
+while IFS= read -r user; do
+    user_status=$(passwd -S "$user" 2>/dev/null | awk '{print $2}')
+    if [[ "$user_status" != "L" ]]; then
+        locked_status=1
+        echo -e " - User \"$user\" without valid shell is not locked...[${RED}FAIL${RESET}]"
+    fi
+done < <(awk -v pat="$valid_shells" -F: '
+($1 != "root" && $(NF) !~ pat) { print $1 }' /etc/passwd)
+if [[ $locked_status -eq 0 ]]; then
+    echo -e " Ensure accounts without a valid login shell are locked...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure accounts without a valid login shell are locked...[${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing root and system accounts and environment completed${RESET}"
+sleep 5
+printf "${BLUE}[+] User Accounts and Environment ${RESET}\n"
+printf "╭────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing user default environment ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────╯\n"
+sleep 5
+if grep -Ps '^\h*([^#\n\r]+)?/nologin\b' /etc/shells >/dev/null; then
+    echo -e " Ensure nologin is not listed in /etc/shells...[${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure nologin is not listed in /etc/shells...[${GREEN}PASS${RESET}]"
+fi
+output1=""
+output2=""
+[ -f /etc/bashrc ] && BRC="/etc/bashrc"
+for f in "$BRC" /etc/profile /etc/profile.d/*.sh; do
+    if [ -f "$f" ]; then
+        if grep -Pq '^\s*([^#]+\s+)?TMOUT=(900|[1-8][0-9][0-9]|[1-9][0-9]|[1-9])\b' "$f" && \
+           grep -Pq '^\s*([^#]+;\s*)?readonly\s+TMOUT' "$f" && \
+           grep -Pq '^\s*([^#]+;\s*)?export\s+TMOUT' "$f"; then
+            output1="$f"
+        fi
+    fi
+done
+if grep -Pq '^\s*([^#]+\s+)?TMOUT=(9[0-9][1-9]|9[1-9][0-9]|0+|[1-9]\d{3,})\b' /etc/profile /etc/profile.d/*.sh "$BRC" 2>/dev/null; then
+    output2=$(grep -Ps '^\s*([^#]+\s+)?TMOUT=(9[0-9][1-9]|9[1-9][0-9]|0+|[1-9]\d{3,})\b' /etc/profile /etc/profile.d/*.sh "$BRC" 2>/dev/null)
+fi
+if [[ -n "$output1" && -z "$output2" ]]; then
+    echo -e " Ensure default user shell timeout is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure default user shell timeout is configured...[${RED}FAIL${RESET}]"
+fi
+output1=""
+output2=""
+[ -f /etc/bashrc ] && BRC="/etc/bashrc"
+for f in "$BRC" /etc/profile /etc/profile.d/*.sh; do
+    [ -f "$f" ] || continue
+    if grep -Pq '^\s*umask\s+0?027\b' "$f"; then
+        output1="$f"
+    fi
+done
+for f in "$BRC" /etc/profile /etc/profile.d/*.sh; do
+    [ -f "$f" ] || continue
+    if grep -Pq '^\s*umask\s+(0[0-9]{3}|[0-9]{2,3})\b' "$f" && \
+       ! grep -Pq '^\s*umask\s+0?027\b' "$f"; then
+        output2="$f"
+    fi
+done
+if [[ -n "$output1" && -z "$output2" ]]; then
+    echo -e " Ensure default user umask is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure default user umask is configured...[${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing user default environment completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing Configure systemd-journald service  ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────────╯\n"
+sleep 5
+status_enabled=$(systemctl is-enabled systemd-journald.service 2>/dev/null)
+status_active=$(systemctl is-active systemd-journald.service 2>/dev/null)
+if [[ "$status_enabled" == "static" && "$status_active" == "active" ]]; then
+    echo -e " Ensure journald service is enabled and active...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure journald service is enabled and active...[${RED}FAIL${RESET}]"
+    printf "   - Status enabled: %s\n" "$status_enabled"
+    printf "   - Status active : %s\n" "$status_active"
+fi
+PASS=true
+if [[ -d /var/log/journal ]]; then
+    while IFS= read -r file; do
+        mode=$(stat -c %a "$file")
+        if (( 10#$mode > 640 )); then
+            PASS=false
+        fi
+    done < <(find /var/log/journal -type f)
+fi
+for dir in /run /var/lib/systemd; do
+    if [[ -d "$dir" ]]; then
+        mode=$(stat -c %a "$dir")
+        if (( 10#$mode > 755 )); then
+            PASS=false
+        fi
+    fi
+done
+if $PASS; then
+    echo -e " Ensure journald log file access is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure journald log file access is configured...[${RED}FAIL${RESET}]"
+fi
+if grep -Prsq '^\s*(SystemMaxUse|SystemKeepFree|RuntimeMaxUse|RuntimeKeepFree|MaxFileSec)=' /etc/systemd/journald.conf /etc/systemd/journald.conf.d/*.conf 2>/dev/null; then
+     echo -e " Ensure journald log file rotation is configured...[${GREEN}PASS${RESET}]"
+else
+     echo -e " Ensure journald log file rotation is configured...[${RED}FAIL${RESET}]"
+fi
+
+
