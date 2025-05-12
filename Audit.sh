@@ -1,4 +1,9 @@
 #Let's start scripting 
+# Capture the audit output to a temporary file
+audit_output=$(mktemp)
+# Redirect all following output to both terminal and temp file
+exec > >(tee "$audit_output") 2>&1
+
 clear
 GREEN='\e[1;32m'
 BLUE='\e[1;34m'
@@ -659,7 +664,7 @@ if [ -e "/etc/cron.allow" ]; then
     && echo -e " Ensure /etc/cron.allow is correctly configured...[${GREEN}PASS${RESET}]" \
     || echo -e " Ensure /etc/cron.allow permissions are incorrect...[${RED}FAIL${RESET}]"
 else
-    echo -e " /etc/cron.allow does not exist...[${RED}WARNING${RED}]"
+    echo -e " /etc/cron.allow does not exist...[${RED}WARNING${RESET}]"
 fi
 if [ -e "/etc/cron.deny" ]; then
     stat -Lc 'Access: (%a) Owner: (%U) Group: (%G)' /etc/cron.deny | grep -E "Access: \(640\) Owner: \(root\) Group: \(root\)|Access: \(640\) Owner: \(root\) Group: \(crontab\)" \
@@ -1642,9 +1647,9 @@ fi
 echo -e "➽ ${GREEN}Auditing user default environment completed${RESET}"
 sleep 5
 printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
-printf "╭────────────────────────────────────────────────────────.★..─╮\n"
-printf " • ${GREEN}Auditing Configure systemd-journald service  ${RESET}...\n"
-printf "╰─..★.────────────────────────────────────────────────────────╯\n"
+printf "╭──────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing systemd-journald service  ${RESET}...\n"
+printf "╰─..★.──────────────────────────────────────────────────────╯\n"
 sleep 5
 status_enabled=$(systemctl is-enabled systemd-journald.service 2>/dev/null)
 status_active=$(systemctl is-active systemd-journald.service 2>/dev/null)
@@ -1682,5 +1687,359 @@ if grep -Prsq '^\s*(SystemMaxUse|SystemKeepFree|RuntimeMaxUse|RuntimeKeepFree|Ma
 else
      echo -e " Ensure journald log file rotation is configured...[${RED}FAIL${RESET}]"
 fi
+if systemctl is-active --quiet rsyslog && systemctl is-active --quiet systemd-journald; then
+    echo -e " Ensure only one logging system is in use...[${RED}FAIL${RESET}]"
+elif systemctl is-active --quiet rsyslog; then
+    echo -e " Ensure only one logging system is in use...[${GREEN}PASS${RESET}] (rsyslog is active)"
+elif systemctl is-active --quiet systemd-journald; then
+    echo -e " Ensure only one logging system is in use...[${GREEN}PASS${RESET}] (journald is active)"
+else
+    echo -e " Ensure only one logging system is in use...[${RED}FAIL${RESET}] (No active logging)"
+fi
+echo -e "➽ ${GREEN}Auditing systemd-journald service completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing systemd-journal-remote  ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────╯\n"
+sleep 5
+if dpkg-query -W -f='${Status}' systemd-journal-remote 2>/dev/null | grep -q "install ok installed"; then
+    echo -e " Ensure systemd-journal-remote is installed...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure systemd-journal-remote is installed...[${RED}FAIL${RESET}]"
+fi
+required_params=("ServerCertificateFile" "ServerKeyFile" "TrustedCertificateFile" "URL")
+conf_files=$(systemd-analyze cat-config systemd/journal-upload.conf | tac | grep -Po '^\s*#\s*/[^#\n\r\s]+\.conf\b' | tr -d '#' | tr -d ' ')
+missing=0
+for param in "${required_params[@]}"; do
+    found=0
+    while read -r file; do
+        if grep -Pq "^\s*${param}=" "$file" 2>/dev/null; then
+            found=1
+            break
+        fi
+    done <<< "$conf_files"
+    [ "$found" -eq 0 ] && missing=1 && break
+done
+if [ "$missing" -eq 0 ]; then
+    echo -e " Ensure systemd-journal-upload authentication is configured...${RESET}[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure systemd-journal-upload authentication is configured...${RESET}[${RED}FAIL${RESET}]"
+fi
+if systemctl is-enabled systemd-journal-upload.service >/dev/null 2>&1 && \
+   systemctl is-active systemd-journal-upload.service >/dev/null 2>&1; then
+    echo -e " Ensure systemd-journal-upload is enabled and active...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure systemd-journal-upload is enabled and active...[${RED}FAIL${RESET}]"
+fi
+if systemd-analyze cat-config systemd/journald.conf | grep -Pq '^\s*ForwardToSyslog\s*=\s*no\s*$'; then
+    echo -e " Ensure journald ForwardToSyslog is disabled...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure journald ForwardToSyslog is disabled...[${RED}FAIL${RESET}]"
+fi
+if systemd-analyze cat-config systemd/journald.conf | grep -Pq '^\s*Compress\s*=\s*yes\s*$'; then
+    echo -e " Ensure journald Compress is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure journald Compress is configured...[${RED}FAIL${RESET}]"
+fi
+if systemd-analyze cat-config systemd/journald.conf | grep -Pq '^\s*Storage\s*=\s*persistent\s*$'; then
+    echo -e " Ensure journald Storage is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure journald Storage is configured...[${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing systemd-journal-remote completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭─────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing Logfiles  ${RESET}...\n"
+printf "╰─..★.─────────────────────────────────────────╯\n"
+sleep 5
+if find /var/log -type f \( -perm /0137 -o ! -user root -o ! -group root \) | grep -q .; then
+    echo -e " Ensure access to all logfiles is configured... [${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure access to all logfiles is configured... [${GREEN}PASS${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing Logfiles completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing auditd Service ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5 
+if dpkg-query -s auditd &>/dev/null && dpkg-query -s audispd-plugins &>/dev/null; then
+    echo -e " Ensure auditd and audispd-plugins are installed... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure auditd and audispd-plugins are installed... [${RED}FAIL${RESET}]"
+fi
+if systemctl is-enabled auditd 2>/dev/null | grep -q '^enabled' && systemctl is-active auditd 2>/dev/null | grep -q '^active'; then
+    echo -e " Ensure auditd service is enabled and active... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure auditd service is enabled and active... [${RED}FAIL${RESET}]"
+fi
+if find /boot -type f -name 'grub.cfg' -exec grep -Ph '^\h*linux' {} + | grep -vq 'audit=1'; then
+    echo -e " Ensure auditing at boot is enabled (audit=1)... [${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure auditing at boot is enabled (audit=1)... [${GREEN}PASS${RESET}]"
+fi
+if sudo grep -Ph '^\h*linux' /boot/grub/grub.cfg 2>/dev/null | grep -Po 'audit_backlog_limit=\K\d+' | grep -qvE '^(8192|[89][0-9]{3,}|[1-9][0-9]{4,})'; then
+    echo -e " Ensure audit_backlog_limit is set to 8192 or higher... [${RED}FAIL${RESET}]"
+elif ! sudo grep -Ph '^\h*linux' /boot/grub/grub.cfg 2>/dev/null | grep -q 'audit_backlog_limit='; then
+    echo -e " Ensure audit_backlog_limit is set to 8192 or higher... [${RED}FAIL${RESET}]"
+else
+    echo -e " Ensure audit_backlog_limit is set to 8192 or higher... [${GREEN}PASS${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing auditd Service completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing Data Retention ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5 
+if grep -Pq '^\s*max_log_file\s*=\s*\d+\b' /etc/audit/auditd.conf; then
+    echo -e " Ensure audit log storage size is configured...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure audit log storage size is configured...[${RED}FAIL${RESET}]"
+fi
+if grep -Pq '^\s*max_log_file_action\s*=\s*keep_logs\b' /etc/audit/auditd.conf; then
+    echo -e " Ensure audit logs are not automatically deleted...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure audit logs are not automatically deleted...[${RED}FAIL${RESET}]"
+fi
+dfull=$(grep -Pi '^\s*disk_full_action\s*=\s*(halt|single)\b' /etc/audit/auditd.conf)
+derr=$(grep -Pi '^\s*disk_error_action\s*=\s*(syslog|single|halt)\b' /etc/audit/auditd.conf)
 
+if [[ -n "$dfull" && -n "$derr" ]]; then
+    echo -e " Ensure system is disabled when audit logs are full...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure system is disabled when audit logs are full...[${RED}FAIL${RESET}]"
+fi
+low=$(grep -P '^\s*space_left_action\s*=\s*(email|exec|single|halt)\b' /etc/audit/auditd.conf)
+admin=$(grep -P '^\s*admin_space_left_action\s*=\s*(single|halt)\b' /etc/audit/auditd.conf)
+if [[ -n "$low" && -n "$admin" ]]; then
+    echo -e " Ensure system warns when audit logs are low on space...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure system warns when audit logs are low on space...[${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing Data Retention completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing auditd Rules ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5
+on_disk=$(awk '/^ *-w/ && /\/etc\/sudoers/ && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'scope')
+running=$(auditctl -l 2>/dev/null | awk '/^ *-w/ && /\/etc\/sudoers/ && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c 'scope')
+if [[ "$on_disk" -ge 2 && "$running" -ge 2 ]]; then
+    echo -e " Ensure changes to system administration scope...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure changes to system administration scope...[${RED}FAIL${RESET}]"
+fi
+on_disk=$(awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && (/ -F *auid!=unset/ || / -F *auid!=-1/ || / -F *auid!=4294967295/) && (/ -C *euid!=uid/ || / -C *uid!=euid/) && / -S *execve/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'user_emulation')
+running=$(auditctl -l 2>/dev/null | awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && (/ -F *auid!=unset/ || / -F *auid!=-1/ || / -F *auid!=4294967295/) && (/ -C *euid!=uid/ || / -C *uid!=euid/) && / -S *execve/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c 'user_emulation')
+if [[ "$on_disk" -ge 2 && "$running" -ge 2 ]]; then
+    echo -e " Ensure actions as another user are always logged...[${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure actions as another user are always logged...[${RED}FAIL${RESET}]"
+fi
+SUDO_LOG_FILE=$(grep -r logfile /etc/sudoers* 2>/dev/null | sed -e 's/.*logfile=//;s/,.*//' -e 's/"//g')
+if [[ -n "$SUDO_LOG_FILE" ]]; then
+    on_disk=$(awk -v file="$SUDO_LOG_FILE" '/^ *-w/ && $0 ~ file && /-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c "$SUDO_LOG_FILE")
+    running=$(auditctl -l 2>/dev/null | awk -v file="$SUDO_LOG_FILE" '/^ *-w/ && $0 ~ file && /-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c "$SUDO_LOG_FILE")
 
+    if [[ "$on_disk" -ge 1 && "$running" -ge 1 ]]; then
+        echo -e " Ensure events that modify the sudo log file are collected...[$GREEN"PASS"$RESET]"
+    else
+        echo -e " Ensure events that modify the sudo log file are collected...[$RED"FAIL"$RESET]"
+    fi
+else
+    echo -e " Ensure events that modify the sudo log file are collected...[$YELLOW"SKIPPED"$RESET] (sudo log file not configured)"
+fi
+# on_disk=$(awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && / -S/ && (/adjtimex/ || /settimeofday/ || /clock_settime/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'time-change')
+# on_disk_localtime=$(awk '/^ *-w/ && /\/etc\/localtime/ && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'time-change')
+# running=$(auditctl -l 2>/dev/null | awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && / -S/ && (/adjtimex/ || /settimeofday/ || /clock_settime/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c 'time-change')
+# running_localtime=$(auditctl -l 2>/dev/null | awk '/^ *-w/ && /\/etc\/localtime/ && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c 'time-change')
+# if [[ "$on_disk" -ge 4 && "$on_disk_localtime" -ge 1 && "$running" -ge 4 && "$running_localtime" -ge 1 ]]; then
+#     echo -e " Ensure events that modify date and time information are collected...[$GREEN"PASS"$RESET]"
+# else
+#     echo -e " Ensure events that modify date and time information are collected...[$RED"FAIL"$RESET]"
+# fi
+# on_disk_syscalls=$(awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && / -S/ && (/sethostname/ || /setdomainname/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'system-locale' 2>/dev/null)
+# on_disk_files=$(awk '/^ *-w/ && (/\/etc\/issue/ || /\/etc\/issue.net/ || /\/etc\/hosts/ || /\/etc\/networks/ || /\/etc\/network/ || /\/etc\/netplan/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'system-locale' 2>/dev/null)
+# running_syscalls=$(auditctl -l 2>/dev/null | awk '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && / -S/ && (/sethostname/ || /setdomainname/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' 2>/dev/null | grep -c 'system-locale' 2>/dev/null)
+# running_files=$(auditctl -l 2>/dev/null | awk '/^ *-w/ && (/\/etc\/issue/ || /\/etc\/issue.net/ || /\/etc\/hosts/ || /\/etc\/networks/ || /\/etc\/network/ || /\/etc\/netplan/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/' 2>/dev/null | grep -c 'system-locale' 2>/dev/null)
+# if [[ "$on_disk_syscalls" -ge 2 && "$on_disk_files" -ge 7 && "$running_syscalls" -ge 2 && "$running_files" -ge 7 ]]; then
+#     echo -e " Ensure events that modify the system's network environment are collected...[${GREEN}PASS${RESET}]"
+# else
+#     echo -e " Ensure events that modify the system's network environment are collected...[${RED}FAIL${RESET}]"
+# fi
+on_disk=$(awk '/^ *-w/ && (/\/var\/log\/lastlog/ || /\/var\/run\/faillock/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c '/var/.*logins')
+running=$(auditctl -l 2>/dev/null | awk '/^ *-w/ && (/\/var\/log\/lastlog/ || /\/var\/run\/faillock/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c '/var/.*logins')
+if [[ "$on_disk" -ge 2 && "$running" -ge 2 ]]; then
+    echo -e " Ensure login and logout events are collected... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure login and logout events are collected... [${RED}FAIL${RESET}]"
+fi
+UID_MIN=$(awk '/^\s*UID_MIN/{print $2}' /etc/login.defs)
+if [[ -z "$UID_MIN" ]]; then
+    echo -e " Ensure file deletion events are collected... [${RED}FAIL${RESET}] (UID_MIN unset)"
+    exit 1
+fi
+on_disk=$(awk -v u="$UID_MIN" '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && (/ -F *auid!=unset/ || / -F *auid!=-1/ || / -F *auid!=4294967295/) && / -F *auid>=/ && / -S/ && (/unlink/ || /unlinkat/ || /rename/ || /renameat/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c delete)
+running=$(auditctl -l 2>/dev/null | awk -v u="$UID_MIN" '/^ *-a *always,exit/ && / -F *arch=b(32|64)/ && (/ -F *auid!=unset/ || / -F *auid!=-1/ || / -F *auid!=4294967295/) && / -F *auid>=/ && / -S/ && (/unlink/ || /unlinkat/ || /rename/ || /renameat/) && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c delete)
+if [[ "$on_disk" -ge 2 && "$running" -ge 2 ]]; then
+    echo -e " Ensure file deletion events are collected... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure file deletion events are collected... [${RED}FAIL${RESET}]"
+fi
+on_disk=$(awk '/^ *-w/ && (/\/etc\/apparmor/ || /\/etc\/apparmor\.d/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' /etc/audit/rules.d/*.rules 2>/dev/null | grep -c 'MAC-policy')
+running=$(auditctl -l 2>/dev/null | awk '/^ *-w/ && (/\/etc\/apparmor/ || /\/etc\/apparmor\.d/) && / +-p *wa/ && (/ key= *[!-~]* *$/ || / -k *[!-~]* *$/)' | grep -c 'MAC-policy')
+if [[ "$on_disk" -ge 2 && "$running" -ge 2 ]]; then
+    echo -e " Ensure MAC policy modifications are audited... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure MAC policy modifications are audited... [${RED}FAIL${RESET}]"
+fi
+# UID_MIN=$(awk '/^\s*UID_MIN/ {print $2}' /etc/login.defs)
+# on_disk=$(awk "/-a always,exit/ && /-F path=\/usr\/bin\/chcon/ && /-F perm=x/ && /-F auid>=$UID_MIN/ && (/auid!=unset/ || /auid!=-1/ || /auid!=4294967295/) && /-k perm_chng/" /etc/audit/rules.d/*.rules 2>/dev/null | wc -l)
+# running=$(auditctl -l 2>/dev/null | awk "/-a always,exit/ && /-F path=\/usr\/bin\/chcon/ && /-F perm=x/ && /-F auid>=$UID_MIN/ && (/auid!=unset/ || /auid!=-1/ || /auid!=4294967295/) && /-k perm_chng/" | wc -l)
+# if [[ $on_disk -ge 1 && $running -ge 1 ]]; then
+#     echo -e " Monitor 'chcon' command usage... [${GREEN}PASS${RESET}]"
+# else
+#     echo -e " Monitor 'chcon' command usage... [${RED}FAIL${RESET}]"
+# fi
+if grep -Pq '^\h*-e\h+2\b' /etc/audit/rules.d/*.rules 2>/dev/null; then
+    echo -e " Ensure the audit configuration is immutable... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure the audit configuration is immutable... [${RED}FAIL${RESET}]"
+fi
+if augenrules --check 2>/dev/null | grep -q "No change"; then
+    echo -e " Audit config on disk matches running config... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Audit config mismatch between disk and runtime... [${RED}FAIL${RESET}]"
+fi
+echo -e "➽ ${GREEN}Auditing auditd Rules completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭──────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing auditd File Access${RESET}...\n"
+printf "╰─..★.──────────────────────────────────────────────╯\n"
+sleep 5
+conf="/etc/audit/auditd.conf"
+[ -f "$conf" ] && dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")" && \
+find "$dir" -maxdepth 1 -type f -perm /0137 | grep -q . && \
+echo -e " Ensure audit log files mode is configured... [${RED}FAIL${RESET}]" || \
+echo -e " Ensure audit log files mode is configured... [${GREEN}PASS${RESET}]"
+conf="/etc/audit/auditd.conf"
+[ -f "$conf" ] && dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")" && \
+find "$dir" -maxdepth 1 -type f ! -user root | grep -q . && \
+echo -e " Audit log files not owned by root... [${RED}FAIL${RESET}]" || \
+echo -e " Audit log file ownership OK (owned by root)... [${GREEN}PASS${RESET}]"
+conf="/etc/audit/auditd.conf"
+if grep -Piq '^\s*log_group\s*=\s*\S+' "$conf" && \
+   ! grep -Piq '^\s*log_group\s*=\s*(adm|root)\b' "$conf"; then
+    echo -e " log_group is not set to 'adm' or 'root'... [${RED}FAIL${RESET}]"
+else
+    echo -e " log_group is set correctly... [${GREEN}PASS${RESET}]"
+fi
+dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")"
+find "$dir" -type f ! -group root ! -group adm | grep -q . && \
+echo -e " Audit log files not group-owned by root or adm... [${RED}FAIL${RESET}]" || \
+echo -e " Audit log files group-owned by root or adm... [${GREEN}PASS${RESET}]"
+conf="/etc/audit/auditd.conf"
+mask=$((027))
+if [ -f "$conf" ]; then
+  dir=$(dirname "$(awk -F= '/^\s*log_file\s*/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' "$conf")")
+  [ -d "$dir" ] && mode=$(stat -c '%a' "$dir") && \
+  (( (8#$mode & mask) != 0 )) && \
+    echo "Audit log dir '$dir' too permissive (mode: $mode)... [FAIL]" || \
+    echo "Audit log dir permissions OK (mode: $mode)... [PASS]"
+else
+  echo "Config file '$conf' not found."
+fi
+perm_mask="0137"
+max_perm="$(printf '%o' $((0777 & ~$perm_mask)))"
+find /etc/audit/ -type f \( -name '*.conf' -o -name '*.rules' \) -perm /"$perm_mask" | grep -q . && \
+echo -e " Audit config files too permissive (should be ≤ $max_perm)... [${RED}FAIL${RESET}]" || \
+echo -e " Audit config file permissions OK (≤ $max_perm)... [${GREEN}PASS${RESET}]"
+tools=(/sbin/auditctl /sbin/aureport /sbin/ausearch /sbin/autrace /sbin/auditd /sbin/augenrules)
+for tool in "${tools[@]}"; do
+  [ -f "$tool" ] && mode=$(stat -Lc '%a' "$tool") && [ "$mode" -gt 755 ] && \
+  echo -e " Audit tool '$tool' too permissive (mode: $mode)... [${RED}FAIL${RESET}]" && exit 1
+done
+echo -e " Audit tool permissions OK (≤ 755)... [${GREEN}PASS${RESET}]"
+echo -e "➽ ${GREEN}Auditing auditd file access completed${RESET}"
+sleep 5
+printf "${BLUE}[+] System Maintenance ${RESET}\n"
+printf "╭────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Auditing System File Permissions${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────╯\n"
+sleep 5
+perm="$(stat -Lc '%a' /etc/passwd)"
+owner="$(stat -Lc '%u' /etc/passwd)"
+group="$(stat -Lc '%g' /etc/passwd)"
+if [[ "$perm" -le 644 && "$owner" -eq 0 && "$group" -eq 0 ]]; then
+    echo -e " Ensure permissions on /etc/passwd are configured... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure permissions on /etc/passwd are configured... [${RED}FAIL${RESET}]"
+fi
+perm=$(stat -Lc "%a" /etc/group 2>/dev/null)
+owner=$(stat -Lc "%u" /etc/group 2>/dev/null)
+group=$(stat -Lc "%g" /etc/group 2>/dev/null)
+if [[ "$perm" -le 644 && "$owner" -eq 0 && "$group" -eq 0 ]]; then
+    echo -e " Ensure permissions on /etc/group are configured... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure permissions on /etc/group are configured... [${RED}FAIL${RESET}]"
+fi
+perm=$(stat -Lc "%a" /etc/shadow 2>/dev/null)
+owner=$(stat -Lc "%u" /etc/shadow 2>/dev/null)
+group=$(stat -Lc "%g" /etc/shadow 2>/dev/null)
+if [[ "$perm" -le 640 && "$owner" -eq 0 && ( "$group" -eq 0 || "$group" -eq 42 ) ]]; then
+    echo -e " Ensure permissions on /etc/shadow are configured... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure permissions on /etc/shadow are configured... [${RED}FAIL${RESET}]"
+fi
+perm=$(stat -Lc "%a" /etc/gshadow 2>/dev/null)
+owner=$(stat -Lc "%u" /etc/gshadow 2>/dev/null)
+group=$(stat -Lc "%g" /etc/gshadow 2>/dev/null)
+if [[ "$perm" -le 640 && "$owner" -eq 0 && ( "$group" -eq 0 || "$group" -eq 42 ) ]]; then
+    echo -e " Ensure permissions on /etc/gshadow are configured... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure permissions on /etc/gshadow are configured... [${RED}FAIL${RESET}]"
+fi
+perm=$(stat -Lc "%a" /etc/shells 2>/dev/null)
+owner=$(stat -Lc "%u" /etc/shells 2>/dev/null)
+group=$(stat -Lc "%g" /etc/shells 2>/dev/null)
+if [[ "$perm" -le 644 && "$owner" -eq 0 && "$group" -eq 0 ]]; then
+    echo -e " Ensure permissions on /etc/shells are configured... [${GREEN}PASS${RESET}]"
+else
+    echo -e " Ensure permissions on /etc/shells are configured... [${RED}FAIL${RESET}]"
+fi
+if [ -e "/etc/security/opasswd" ]; then
+    perm=$(stat -Lc '%a' /etc/security/opasswd)
+    owner=$(stat -Lc '%u' /etc/security/opasswd)
+    group=$(stat -Lc '%g' /etc/security/opasswd)
+    if [[ "$perm" -le 600 && "$owner" -eq 0 && "$group" -eq 0 ]]; then
+        echo -e " Ensure permissions on /etc/security/opasswd are configured... [${GREEN}PASS${RESET}]"
+    else
+        echo -e " Ensure permissions on /etc/security/opasswd are configured... [${RED}FAIL${RESET}]"
+    fi
+fi
+
+# Strip ANSI color codes before counting
+stripped_output=$(sed 's/\x1B\[[0-9;]*[JKmsu]//g' "$audit_output")
+
+pass_count=$(printf "%s" "$stripped_output" | grep -c "\[PASS\]")
+fail_count=$(printf "%s" "$stripped_output" | grep -c "\[FAIL\]")
+total_checks=$((pass_count + fail_count))
+
+if [ "$total_checks" -eq 0 ]; then
+    score=0
+else
+    score=$(( 100 * pass_count / total_checks ))
+fi
+
+echo
+printf "\e[1mAudit Summary:\e[0m\n"
+printf "  Passed : %s\n" "$pass_count"
+printf "  Failed : %s\n" "$fail_count"
+printf "  Total  : %s\n" "$total_checks"
+printf "\e[1mCompliance Score: \e[32m%s%%\e[0m\n" "$score"
