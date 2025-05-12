@@ -727,7 +727,7 @@ else
     printf " •${YELLOW} Ensure chrony is running as user _chrony...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
 if systemctl is-enabled chrony.service &>/dev/null && systemctl is-active chrony.service &>/dev/null; then
-    Printf " •${YELLOW} Ensure chrony is enabled and running...${RESET}[${GREEN}DONE${RESET}]\n"
+    printf " •${YELLOW} Ensure chrony is enabled and running...${RESET}[${GREEN}DONE${RESET}]\n"
 else
     systemctl unmask chrony.service &>/dev/null
     systemctl --now enable chrony.service &>/dev/null
@@ -1156,12 +1156,14 @@ else
     apt update && apt install -y ufw
     printf " •${YELLOW} Ensure ufw is installed...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 if dpkg-query -s iptables-persistent &>/dev/null; then
     apt purge -y iptables-persistent &>/dev/null
     printf " •${YELLOW} Ensure iptables-persistent is not installed with ufw...${RESET}[${GREEN}DONE${RESET}]\n"
 else
     printf " •${YELLOW} Ensure iptables-persistent is not installed with ufw...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 if systemctl is-enabled --quiet ufw && systemctl is-active --quiet ufw && ufw status | grep -q "Status: active"; then
     printf " •${YELLOW} Ensure ufw service is enabled...${RESET}[${GREEN}DONE${RESET}]\n"
 else
@@ -1170,6 +1172,7 @@ else
     ufw --force enable &>/dev/null
     printf " •${YELLOW} Ensure ufw service is enabled...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 if grep -qP 'lo|127.0.0.0' /etc/ufw/before.rules &&
    ufw status verbose | grep -qE 'Anywhere DENY IN 127.0.0.0/8' &&
    ufw status verbose | grep -qE 'Anywhere \(v6\) DENY IN ::1'; then
@@ -1189,13 +1192,14 @@ else
     ufw deny in from 127.0.0.0/8 &>/dev/null
     ufw deny in from ::1 &>/dev/null
     cp /etc/ufw/before.rules /etc/ufw/before.rules.bak
-    ed -i '0,/\*filter/s/^/#/' /etc/ufw/before.rules
     ufw reload &>/dev/null
     printf " •${YELLOW} Ensure ufw loopback traffic is configured...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 if ! ufw status | grep -q "Status: active"; then
     ufw enable &>/dev/null
 fi
+
 if ufw status verbose | grep -qE "Default: deny \(incoming\), allow \(outgoing\)"; then
     printf " •${YELLOW} Ensure ufw outbound connections are configured...${RESET}[${GREEN}DONE${RESET}]\n"
 else
@@ -1203,6 +1207,7 @@ else
     ufw reload &>/dev/null
     printf " •${YELLOW} Ensure ufw outbound connections are configured...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 open_ports=$(ufw status verbose | grep -Po '^\h*\d+\b' | sort -u)
 system_ports=$(ss -tuln | awk '($5!~/%lo:/ && $5!~/127.0.0.1:/ && $5!~/\[?::1\]?:/) {split($5, a, ":"); print a[2]}' | sort -u)
 diff_ports=$(comm -23 <(echo "$system_ports") <(echo "$open_ports"))
@@ -1216,6 +1221,8 @@ else
     ufw reload &>/dev/null
     printf " •${YELLOW} Ensure ufw firewall rules exist for all open ports...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+ufw allow 22/tcp &>/dev/null
+
 if ufw status verbose | grep -qE "Default: deny \(incoming\), deny \(outgoing\), disabled \(routed\)"; then
     printf " •${YELLOW} Ensure ufw default deny firewall policy...${RESET}[${GREEN}DONE${RESET}]\n"
 else
@@ -1227,6 +1234,7 @@ else
     ufw reload &>/dev/null
     printf " •${YELLOW} Ensure ufw default deny firewall policy...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+
 echo -e "➽ ${GREEN}Configuring uncomplicatedfirewall completed${RESET}"
 sleep 5
 
@@ -2121,3 +2129,304 @@ MaxFileSec=1month
 EOF
 sudo systemctl reload-or-restart systemd-journald
 printf " •${YELLOW} Ensure journald log file rotation is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+if systemctl is-active --quiet rsyslog && systemctl is-active --quiet systemd-journald; then
+    sudo systemctl stop rsyslog >/dev/null 2>&1
+    sudo systemctl disable rsyslog >/dev/null 2>&1
+    sudo systemctl mask rsyslog >/dev/null 2>&1
+    sudo systemctl restart systemd-journald >/dev/null 2>&1
+    printf " •${YELLOW}Ensure only one logging system is in use (journald retained)...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW}Ensure only one logging system is in use...${RESET}[${GREEN}ALREADY CONFIGURED${RESET}]\n"
+fi
+echo -e "➽ ${GREEN}Configuring systemd-journald service  completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring systemd-journal-remote  ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────╯\n"
+sleep 5
+if ! dpkg-query -W -f='${Status}' systemd-journal-remote 2>/dev/null | grep -q "install ok installed"; then
+    if timeout 30s sudo apt-get update -qq >/dev/null 2>&1; then
+        if sudo apt-get install -y systemd-journal-remote >/dev/null 2>&1; then
+            printf " •${YELLOW}Ensure systemd-journal-remote is installed...${RESET}[${GREEN}DONE${RESET}]\n"
+        else
+            printf " •${YELLOW}Ensure systemd-journal-remote is installed...${RESET}[${RED}FAILED INSTALL${RESET}]\n"
+        fi
+    else
+        printf " •${YELLOW}Ensure systemd-journal-remote is installed...${RESET}[${RED}UPDATE TIMEOUT${RESET}]\n"
+    fi
+else
+    printf " •${YELLOW}Ensure systemd-journal-remote is installed...${RESET}[${GREEN}ALREADY INSTALLED${RESET}]\n"
+fi
+upload_url="192.168.50.42"
+server_key="/etc/ssl/private/journal-upload.pem"
+server_cert="/etc/ssl/certs/journal-upload.pem"
+trusted_cert="/etc/ssl/ca/trusted.pem"
+sudo mkdir -p /etc/systemd/journal-upload.conf.d/ >/dev/null 2>&1
+sudo tee /etc/systemd/journal-upload.conf.d/60-journald_upload.conf >/dev/null <<EOF
+[Upload]
+URL=$upload_url
+ServerKeyFile=$server_key
+ServerCertificateFile=$server_cert
+TrustedCertificateFile=$trusted_cert
+EOF
+sudo systemctl reload-or-restart systemd-journal-upload >/dev/null 2>&1
+printf " •${YELLOW}Ensure systemd-journal-upload authentication is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+sudo systemctl unmask systemd-journal-upload.service >/dev/null 2>&1
+sudo systemctl --now enable systemd-journal-upload.service >/dev/null 2>&1
+printf " •${YELLOW}Ensure systemd-journal-upload is enabled and active...${RESET}[${GREEN}DONE${RESET}]\n"
+sudo rm -f /etc/systemd/journald.conf.d/*.conf >/dev/null 2>&1
+sudo sed -i '/^\s*ForwardToSyslog\s*=.*/d' /etc/systemd/journald.conf
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/override.conf >/dev/null <<EOF
+[Journal]
+ForwardToSyslog=no
+EOF
+if [ -f /usr/lib/systemd/journald.conf.d/syslog.conf ]; then
+    sudo mv /usr/lib/systemd/journald.conf.d/syslog.conf /usr/lib/systemd/journald.conf.d/syslog.conf.bak
+fi
+sudo systemctl restart systemd-journald
+printf " •${YELLOW}Ensure journald ForwardToSyslog is disabled...${RESET}[${GREEN}DONE${RESET}]\n"
+mkdir -p /etc/systemd/journald.conf.d >/dev/null 2>&1
+dropin="/etc/systemd/journald.conf.d/60-journald.conf"
+if grep -Psq '^\h*\[Journal\]' "$dropin" 2>/dev/null; then
+    printf '\nCompress=yes\n' >> "$dropin"
+else
+    printf '[Journal]\nCompress=yes\n' > "$dropin"
+fi
+systemctl restart systemd-journald >/dev/null 2>&1
+printf " •${YELLOW}Ensure journald Compress is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+mkdir -p /etc/systemd/journald.conf.d
+dropin="/etc/systemd/journald.conf.d/60-journald.conf"
+setting="Storage=persistent"
+if grep -Psq '^\s*\[Journal\]' "$dropin" 2>/dev/null; then
+    printf '\n%s\n' "$setting" >> "$dropin"
+else
+    printf '[Journal]\n%s\n' "$setting" > "$dropin"
+fi
+systemctl reload-or-restart systemd-journald
+printf " •${YELLOW}Ensure journald Storage is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+echo -e "➽ ${GREEN}Configuring systemd-journal-remote completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭─────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring Logfiles  ${RESET}...\n"
+printf "╰─..★.─────────────────────────────────────────╯\n"
+sleep 5
+if find /var/log -type f \( -perm /0137 -o ! -user root -o ! -group root \) | grep -q .; then
+    find /var/log -type f \( -perm /0137 -o ! -user root -o ! -group root \) -exec chown root:root {} \; -exec chmod 600 {} \;
+    printf " •${YELLOW}Ensure access to all logfiles is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW}Ensure access to all logfiles is configured...${RESET}[${GREEN}ALREADY COMPLIANT${RESET}]\n"
+fi
+echo -e "➽ ${GREEN}Configuring Logfiles completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring auditd Service ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5
+if ! dpkg-query -s auditd &>/dev/null || ! dpkg-query -s audispd-plugins &>/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq &>/dev/null
+    apt-get install -y auditd audispd-plugins &>/dev/null
+fi
+printf " •${YELLOW}Ensure auditd and audispd-plugins are installed...${RESET}[${GREEN}DONE${RESET}]\n"
+if systemctl list-unit-files | grep -q "^auditd.service"; then
+    systemctl is-enabled auditd &>/dev/null || systemctl unmask auditd &>/dev/null
+    systemctl is-enabled auditd &>/dev/null || systemctl enable auditd &>/dev/null
+    systemctl is-active auditd &>/dev/null || systemctl start auditd &>/dev/null
+    printf " •${YELLOW}Ensure auditd service is enabled and active...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW}Ensure auditd service is enabled and active...${RESET}[${RED}NOT FOUND${RESET}]\n"
+fi
+grub_file="/etc/default/grub"
+if ! grep -Pq '^\s*GRUB_CMDLINE_LINUX=.*\baudit=1\b' "$grub_file"; then
+    sed -i 's/^\s*GRUB_CMDLINE_LINUX="\([^"]*\)"/GRUB_CMDLINE_LINUX="\1 audit=1"/' "$grub_file" &>/dev/null
+    update-grub &>/dev/null
+fi
+printf " •${YELLOW}Ensure auditing at boot is enabled (audit=1)...${RESET}[${GREEN}DONE${RESET}]\n"
+grub_file="/etc/default/grub"
+if grep -q 'GRUB_CMDLINE_LINUX=' "$grub_file"; then
+    if grep -Pq 'audit_backlog_limit=\d+' "$grub_file"; then
+        sed -i 's/audit_backlog_limit=\d\+/audit_backlog_limit=8192/' "$grub_file" &>/dev/null
+    else
+        sed -i 's/^\s*GRUB_CMDLINE_LINUX="\([^"]*\)"/GRUB_CMDLINE_LINUX="\1 audit_backlog_limit=8192"/' "$grub_file" &>/dev/null
+    fi
+    update-grub &>/dev/null
+fi
+printf " •${YELLOW}Ensure audit_backlog_limit is set to 8192 or higher...${RESET}[${GREEN}DONE${RESET}]\n"
+echo -e "➽ ${GREEN}Configuring auditd Service completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring Data Retention ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5
+setting="max_log_file = 32"
+file="/etc/audit/auditd.conf"
+if grep -q '^\s*max_log_file\s*=' "$file"; then
+    sed -i 's/^\s*max_log_file\s*=.*/'"$setting"'/' "$file"
+else
+    echo "$setting" >> "$file"
+fi
+printf " •${YELLOW}Ensure audit log storage size is configured...${RESET}[${GREEN}DONE${RESET}]\n"
+setting="max_log_file_action = keep_logs"
+file="/etc/audit/auditd.conf"
+if grep -q '^\s*max_log_file_action\s*=' "$file"; then
+    sed -i 's/^\s*max_log_file_action\s*=.*/'"$setting"'/' "$file"
+else
+    echo "$setting" >> "$file"
+fi
+printf " •${YELLOW}Ensure audit logs are not automatically deleted...${RESET}[${GREEN}DONE${RESET}]\n"
+conf="/etc/audit/auditd.conf"
+grep -q '^disk_full_action' "$conf" && \
+    sed -i 's/^disk_full_action.*/disk_full_action = halt/' "$conf" || \
+    echo "disk_full_action = halt" >> "$conf"
+grep -q '^disk_error_action' "$conf" && \
+    sed -i 's/^disk_error_action.*/disk_error_action = halt/' "$conf" || \
+    echo "disk_error_action = halt" >> "$conf"
+printf " •${YELLOW}Ensure system is disabled when audit logs are full...${RESET}[${GREEN}DONE${RESET}]\n"
+conf="/etc/audit/auditd.conf"
+grep -q '^space_left_action' "$conf" && \
+    sed -i 's/^space_left_action.*/space_left_action = email/' "$conf" || \
+    echo "space_left_action = email" >> "$conf"
+grep -q '^admin_space_left_action' "$conf" && \
+    sed -i 's/^admin_space_left_action.*/admin_space_left_action = single/' "$conf" || \
+    echo "admin_space_left_action = single" >> "$conf"
+printf " •${YELLOW}Ensure system warns when audit logs are low on space...${RESET}[${GREEN}DONE${RESET}]\n"
+echo -e "➽ ${GREEN}Configuring Data Retention completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring auditd Rules ${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────╯\n"
+sleep 5
+rulefile="/etc/audit/rules.d/50-scope.rules"
+{
+    echo "-w /etc/sudoers -p wa -k scope"
+    echo "-w /etc/sudoers.d -p wa -k scope"
+} > "$rulefile"
+augenrules --load &>/dev/nul
+printf " •${YELLOW}Ensure sudoers scope changes are audited...${RESET}[${GREEN}DONE${RESET}]\n"
+auditctl -s | grep -q "enabled.*2" && echo "Reboot required to load rules"
+rulefile="/etc/audit/rules.d/50-user_emulation.rules"
+cat <<EOF > "$rulefile"
+-a always,exit -F arch=b64 -C euid!=uid -F auid!=unset -S execve -k user_emulation
+-a always,exit -F arch=b32 -C euid!=uid -F auid!=unset -S execve -k user_emulation
+EOF
+augenrules --load &>/dev/null
+printf " •${YELLOW}Ensure sudo actions as another user are logged...${RESET}[${GREEN}DONE${RESET}]\n"
+auditctl -s | grep -q "enabled.*2" && echo "Reboot required to load rules"
+SUDO_LOG_FILE=$(grep -r logfile /etc/sudoers* 2>/dev/null | sed -e 's/.*logfile=//;s/,.*//' -e 's/"//g')
+if [[ -n "$SUDO_LOG_FILE" ]]; then
+    rule="-w $SUDO_LOG_FILE -p wa -k sudo_log_file"
+    rule_file="/etc/audit/rules.d/50-sudo.rules"
+    grep -qF "$rule" "$rule_file" 2>/dev/null || echo "$rule" >> "$rule_file" 2>/dev/null
+    augenrules --load &>/dev/null
+    auditctl -s | grep -q 'enabled 2' && echo > /dev/null
+    printf " •${YELLOW}Ensure events that modify the sudo log file are collected...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW}Ensure events that modify the sudo log file are collected...${RESET}[${RED}SKIPPED${RESET}] (sudo log file not configured)\n"
+fi
+f="/etc/audit/rules.d/50-login.rules"
+a=0
+grep -qF -- "-w /var/log/lastlog -p wa -k logins" "$f" 2>/dev/null || { echo "-w /var/log/lastlog -p wa -k logins" >> "$f"; a=1; }
+grep -qF -- "-w /var/run/faillock -p wa -k logins" "$f" 2>/dev/null || { echo "-w /var/run/faillock -p wa -k logins" >> "$f"; a=1; }
+[[ $a -eq 1 ]] && augenrules --load &>/dev/null
+printf " •${YELLOW}Ensure login and logout events are collected...${RESET}[${GREEN}%s${RESET}]\n" "$([[ $a -eq 1 ]] && echo DONE || echo ALREADY SET)"
+UID_MIN=$(awk '/^\s*UID_MIN/{print $2}' /etc/login.defs)
+f="/etc/audit/rules.d/50-delete.rules"
+added=0
+if [[ -n "$UID_MIN" ]]; then
+    rule64="-a always,exit -F arch=b64 -S rename,unlink,unlinkat,renameat -F auid>=$UID_MIN -F auid!=unset -k delete"
+    rule32="-a always,exit -F arch=b32 -S rename,unlink,unlinkat,renameat -F auid>=$UID_MIN -F auid!=unset -k delete"
+    grep -qF -- "$rule64" "$f" 2>/dev/null || { echo "$rule64" >> "$f"; added=1; }
+    grep -qF -- "$rule32" "$f" 2>/dev/null || { echo "$rule32" >> "$f"; added=1; }
+    [[ $added -eq 1 ]] && augenrules --load &>/dev/null
+    printf " •${YELLOW}Ensure file deletion events are collected...${RESET}[${GREEN}%s${RESET}]\n" "$([[ $added -eq 1 ]] && echo DONE || echo ALREADY SET)"
+else
+    printf " •${YELLOW}Ensure file deletion events are collected...${RESET}[${RED}SKIPPED${RESET}] (UID_MIN unset)\n"
+fi
+f="/etc/audit/rules.d/50-MAC-policy.rules"
+a=0
+grep -qF -- "-w /etc/apparmor/ -p wa -k MAC-policy" "$f" 2>/dev/null || { echo "-w /etc/apparmor/ -p wa -k MAC-policy" >> "$f"; a=1; }
+grep -qF -- "-w /etc/apparmor.d/ -p wa -k MAC-policy" "$f" 2>/dev/null || { echo "-w /etc/apparmor.d/ -p wa -k MAC-policy" >> "$f"; a=1; }
+[[ $a -eq 1 ]] && augenrules --load &>/dev/null
+printf " •${YELLOW}Ensure MAC policy modifications are audited...${RESET}[${GREEN}%s${RESET}]\n" "$([[ $a -eq 1 ]] && echo DONE || echo ALREADY SET)"
+final="/etc/audit/rules.d/99-finalize.rules"
+if ! grep -Pq '^\h*-e\h+2\b' "$final" 2>/dev/null; then
+    printf '\n-e 2\n' >> "$final"
+    augenrules --load &>/dev/null
+    printf " •${YELLOW}Ensure the audit configuration is immutable...${RESET}[${GREEN}DONE${RESET}]\n"
+else
+    printf " •${YELLOW}Ensure the audit configuration is immutable...${RESET}[${GREEN}ALREADY SET${RESET}]\n"
+fi
+augenrules --load &>/dev/null && echo -e " •${YELLOW}Reloaded audit rules from disk...${RESET}[${GREEN}DONE${RESET}]\n"
+echo -e "➽ ${GREEN}Configuring auditd Rules completed${RESET}"
+sleep 5
+printf "${BLUE}[+] Logging and Auditing ${RESET}\n"
+printf "╭──────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring auditd File Access ${RESET}...\n"
+printf "╰─..★.──────────────────────────────────────────────╯\n"
+sleep 5
+conf="/etc/audit/auditd.conf"
+[ -f "$conf" ] && dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")" && \
+find "$dir" -type f -perm /0137 -exec chmod u-x,g-wx,o-rwx {} + && \
+printf " •${YELLOW}Ensure audit log files mode is configured...${RESET}[${GREEN}DONE${RESET}]\n" || \
+printf " •${YELLOW}Ensure audit log files mode is configured...${RESET}[${RED}FAIL${RESET}]\n"
+conf="/etc/audit/auditd.conf"
+[ -f "$conf" ] && dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")" && \
+find "$dir" -type f ! -user root -exec chown root {} + && \
+printf " •${YELLOW}Audit log file ownership corrected...${RESET}[${GREEN}DONE${RESET}]" || \
+printf " •${YELLOW}auditd.conf not found, skipping remediation...${RESET}[${RED}FAIL${RESET}]\n"
+conf="/etc/audit/auditd.conf"
+[ -f "$conf" ] && dir="$(dirname "$(awk -F= '/^\s*log_file\s*/{print $2}' "$conf" | xargs)")" && \
+find "$dir" -type f ! -group adm ! -group root -exec chgrp adm {} + && \
+printf " •${YELLOW}Corrected group ownership on audit log files...${RESET}[${GREEN}DONE${RESET}]\n"
+grep -q '^log_group' "$conf" && \
+sed -ri 's/^\s*#?\s*log_group\s*=.*/log_group = adm/' "$conf" || \
+echo 'log_group = adm' >> "$conf"
+systemctl restart auditd && \
+printf " •${YELLOW}Set log_group to 'adm' and restarted auditd...${RESET}[${GREEN}DONE${RESET}]"
+chmod g-w,o-rwx "$(dirname "$(awk -F= '/^\s*log_file\s*/ {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}' /etc/audit/auditd.conf)")"
+printf " •${YELLOW}Audit log directory permissions set to 750...${RESET}[${GREEN}DONE${RESET}]\n"
+find /etc/audit/ -type f \( -name '*.conf' -o -name '*.rules' \) -exec chmod u-x,g-wx,o-rwx {} + && \
+printf " •${YELLOW}Audit config file permissions set to 0640 or stricter...${RESET}[${GREEN}DONE${RESET}]\n"
+chmod go-w /sbin/auditctl /sbin/aureport /sbin/ausearch /sbin/autrace /sbin/auditd /sbin/augenrules && \
+printf " •${YELLOW}Audit tools permissions set to 0755 or stricter...${RESET}[${GREEN}DONE${RESET}]"
+echo -e "➽ ${GREEN}Configuring auditd file access completed${RESET}"
+sleep 5
+printf "${BLUE}[+] System Maintenance ${RESET}\n"
+printf "╭────────────────────────────────────────────────────.★..─╮\n"
+printf " • ${GREEN}Configuring System File Permissions${RESET}...\n"
+printf "╰─..★.────────────────────────────────────────────────────╯\n"
+sleep 5
+chmod u-x,go-wx /etc/passwd &>/dev/null
+chown root:root /etc/passwd &>/dev/null
+printf " •${YELLOW}Ensure permissions on /etc/passwd are configured ...${RESET}[${GREEN}DONE${RESET}]"
+chmod u-x,go-wx /etc/group &>/dev/null
+chown root:root /etc/group &>/dev/null
+printf " •${YELLOW}Ensure permissions on /etc/group are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
+chmod u-x,g-wx,o-rwx /etc/shadow &>/dev/null
+if getent group shadow &>/dev/null; then
+    chown root:shadow /etc/shadow &>/dev/null
+else
+    chown root:root /etc/shadow &>/dev/null
+fi
+printf " •${YELLOW}Ensure permissions on /etc/shadow are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
+chmod u-x,g-wx,o-rwx /etc/gshadow &>/dev/null
+if getent group shadow &>/dev/null; then
+    chown root:shadow /etc/gshadow &>/dev/null
+else
+    chown root:root /etc/gshadow &>/dev/null
+fi
+printf " •${YELLOW}Ensure permissions on /etc/gshadow are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
+chmod u-x,go-wx /etc/shells &>/dev/null
+chown root:root /etc/shells &>/dev/null
+printf " •${YELLOW}Ensure permissions on /etc/shells are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
+if [ -e "/etc/security/opasswd" ]; then
+    chmod u-x,go-rwx /etc/security/opasswd &>/dev/null
+    chown root:root /etc/security/opasswd &>/dev/null
+    printf " •${YELLOW}Ensure permissions on /etc/security/opasswd are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
+fi
