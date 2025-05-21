@@ -1,4 +1,10 @@
 #Let's start scripting 
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run this script with sudo:"
+  echo "  sudo bash $0"
+  exit 1
+fi
+
 clear
 GREEN='\e[1;32m'
 BLUE='\e[1;34m'
