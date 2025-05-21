@@ -2430,3 +2430,7 @@ if [ -e "/etc/security/opasswd" ]; then
     chown root:root /etc/security/opasswd &>/dev/null
     printf " •${YELLOW}Ensure permissions on /etc/security/opasswd are configured ...${RESET}[${GREEN}DONE${RESET}]\n"
 fi
+printf "${GREEN}Remediation Completed${RESET}[${GREEN}DONE${RESET}]\n"
+printf "${GREEN}Please Reboot System and Audit again${RESET}[${GREEN}DONE${RESET}]\n"
+printf "${GREEN}Thank You For Using SecureOS${RESET}[${GREEN}DONE${RESET}]\n"
+
