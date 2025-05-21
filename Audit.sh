@@ -23,7 +23,7 @@ printf "${GREEN}%*s╰───────────────────�
 printf "${BLUE}%*s  Program Version: ${RESET}1.0\n" "$pad" ""
 printf "${BLUE}%*s  Developer: ${RESET}Kinley Dorji\n" "$pad" ""
 printf "${CYAN}%*s  GitHub: ${RESET}https://github.com/itzkinleydorji${RESET}\n" "$pad" ""
-printf "${CYAN}%*s  Terms & Services: ${RESET}Plese read on GitHub${RESET}\n" "$pad" ""
+printf "${CYAN}%*s  Documentation: ${RESET}Plese read on GitHub${RESET}\n" "$pad" ""
 printf "${GREEN}%*s---------------------------------------------${RESET}\n" "$pad" ""
 
 echo -ne "${GREEN}Auditor Name${RESET} (eg. Kinley Dorji): "
