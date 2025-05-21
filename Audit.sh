@@ -1,7 +1,10 @@
 #Let's start scripting 
-# Capture the audit output to a temporary file
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run this script with sudo:"
+  echo "  sudo bash $0"
+  exit 1
+fi
 audit_output=$(mktemp)
-# Redirect all following output to both terminal and temp file
 exec > >(tee "$audit_output") 2>&1
 
 clear
